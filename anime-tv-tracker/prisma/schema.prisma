@@ -1,0 +1,345 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum WatchStatus {
+  WATCHING
+  COMPLETED
+  ON_HOLD
+  DROPPED
+  PLAN_TO_WATCH
+}
+
+enum ShowType {
+  ANIME
+  TV
+}
+
+enum ShowStatus {
+  ONGOING
+  COMPLETED
+  HIATUS
+  CANCELLED
+}
+
+enum ClubRole {
+  OWNER
+  MODERATOR
+  MEMBER
+}
+
+enum ReminderMethod {
+  APP
+  EMAIL
+}
+
+model User {
+  id             String            @id @default(cuid())
+  name           String?
+  email          String?           @unique
+  emailVerified  DateTime?
+  image          String?
+  passwordHash   String?
+  role           Role              @default(USER)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  watchlist      WatchlistEntry[]
+  reviews        Review[]
+  clubsOwned     Club[]            @relation("ClubsOwned")
+  clubMembers    ClubMember[]
+  posts          Post[]            @relation("PostsAuthored")
+  comments       Comment[]         @relation("CommentsAuthored")
+  pollVotes      PollVote[]
+  reminders      Reminder[]
+  watchHistory   WatchHistory[]
+}
+
+model Account {
+  id                 String   @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+  oauth_token_secret String?
+  oauth_token        String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Show {
+  id               String           @id @default(cuid())
+  title            String
+  type             ShowType         @default(ANIME)
+  status           ShowStatus?
+  description      String?
+  language         String?
+  releaseYear      Int?
+  episodeCount     Int?
+  seasonCount      Int?
+  posterUrl        String?
+  bannerUrl        String?
+  genres           Json?
+  tags             Json?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  streamingLinks   StreamingLink[]
+  episodes         Episode[]
+  watchlistEntries WatchlistEntry[]
+  reviews          Review[]
+  watchHistory     WatchHistory[]
+  reminders        Reminder[]
+}
+
+model StreamingLink {
+  id       String @id @default(cuid())
+  showId   String
+  platform String
+  url      String
+  region   String?
+
+  show Show @relation(fields: [showId], references: [id], onDelete: Cascade)
+
+  @@index([showId])
+}
+
+model Episode {
+  id            String   @id @default(cuid())
+  showId        String
+  seasonNumber  Int      @default(1)
+  episodeNumber Int
+  title         String?
+  description   String?
+  airDate       DateTime?
+  durationMin   Int?
+
+  show         Show          @relation(fields: [showId], references: [id], onDelete: Cascade)
+  watchHistory WatchHistory[]
+  reminders    Reminder[]
+
+  @@unique([showId, seasonNumber, episodeNumber])
+  @@index([showId])
+}
+
+model WatchlistEntry {
+  id               String       @id @default(cuid())
+  userId           String
+  showId           String
+  status           WatchStatus  @default(PLAN_TO_WATCH)
+  episodesWatched  Int          @default(0)
+  rating           Int?
+  notes            String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show Show @relation(fields: [showId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, showId])
+  @@index([userId])
+  @@index([showId])
+}
+
+model WatchHistory {
+  id            String   @id @default(cuid())
+  userId        String
+  showId        String
+  episodeId     String?
+  seasonNumber  Int?
+  episodeNumber Int?
+  watchedAt     DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show    Show     @relation(fields: [showId], references: [id], onDelete: Cascade)
+  episode Episode? @relation(fields: [episodeId], references: [id])
+
+  @@index([userId])
+  @@index([showId])
+  @@index([episodeId])
+}
+
+model Club {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  ownerId     String
+  isPrivate   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner   User        @relation("ClubsOwned", fields: [ownerId], references: [id], onDelete: Cascade)
+  members ClubMember[]
+  posts   Post[]
+}
+
+model ClubMember {
+  id       String   @id @default(cuid())
+  clubId   String
+  userId   String
+  role     ClubRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@index([userId])
+}
+
+model Post {
+  id               String   @id @default(cuid())
+  clubId           String
+  authorId         String
+  title            String?
+  content          String
+  containsSpoilers Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  club   Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  author User @relation("PostsAuthored", fields: [authorId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  poll     Poll?
+
+  @@index([clubId])
+  @@index([authorId])
+}
+
+model Comment {
+  id               String   @id @default(cuid())
+  postId           String
+  authorId         String
+  content          String
+  containsSpoilers Boolean  @default(false)
+  parentId         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  post    Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author  User   @relation("CommentsAuthored", fields: [authorId], references: [id], onDelete: Cascade)
+  parent  Comment? @relation("CommentToReplies", fields: [parentId], references: [id])
+  replies Comment[] @relation("CommentToReplies")
+
+  @@index([postId])
+}
+
+model Poll {
+  id        String   @id @default(cuid())
+  postId    String   @unique
+  question  String
+  endsAt    DateTime?
+  createdAt DateTime @default(now())
+
+  post    Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  options PollOption[]
+  votes   PollVote[]
+}
+
+model PollOption {
+  id     String @id @default(cuid())
+  pollId String
+  text   String
+  order  Int    @default(0)
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@index([pollId])
+}
+
+model PollVote {
+  id        String   @id @default(cuid())
+  pollId    String
+  optionId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@index([optionId])
+}
+
+model Review {
+  id               String   @id @default(cuid())
+  userId           String
+  showId           String
+  rating           Int
+  title            String?
+  body             String
+  containsSpoilers Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show Show @relation(fields: [showId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, showId])
+}
+
+model Reminder {
+  id          String          @id @default(cuid())
+  userId      String
+  showId      String
+  episodeId   String?
+  scheduledAt DateTime
+  sentAt      DateTime?
+  timezone    String?
+  method      ReminderMethod  @default(APP)
+  createdAt   DateTime        @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show    Show     @relation(fields: [showId], references: [id], onDelete: Cascade)
+  episode Episode? @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([showId])
+}
